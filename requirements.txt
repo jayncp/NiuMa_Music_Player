@@ -1,0 +1,5 @@
+PyQt5>=5.15.0
+requests>=2.25.0
+beautifulsoup4>=4.9.0
+yt-dlp>=2023.3.4 
+mutagen>=1.45.1
