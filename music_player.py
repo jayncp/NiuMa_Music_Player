@@ -39,41 +39,33 @@ class DownloadWorker(QThread):
         self.song_name = song_name
         self.artist_name = artist_name if artist_name else None  # 在搜索时使用None以获取原唱
         
-    def rename_file(self, file_path):
-        """基于歌曲和歌手信息重命名文件，不使用AI"""
+    def rename_file(self, file_path, artist_name=None):
+        """基于歌曲和歌手信息重命名文件"""
         if not file_path:
             return file_path
-            
-        import os
+                
+        import os, re
+        
         # 获取文件目录和扩展名
         file_dir = os.path.dirname(file_path)
         file_ext = os.path.splitext(file_path)[1]
         
-        # 构建新文件名
-        if self.artist_name:
-            # 使用歌曲--歌手格式
-            new_filename = f"{self.song_name}--{self.artist_name}{file_ext}"
-        else:
-            # 只有歌曲名，无歌手信息
-            new_filename = f"{self.song_name}{file_ext}"
-            
-        # 确保文件名不包含非法字符
-        import re
+        # 确定要使用的歌手名
+        artist = artist_name if artist_name is not None else self.artist_name or "Unknown"
+        
+        # 构建新文件名并去除非法字符
+        new_filename = f"{self.song_name}--{artist}{file_ext}"
         new_filename = re.sub(r'[\\/:*?"<>|]', '', new_filename)
         
-        # 构建新的完整路径
+        # 构建新路径并处理文件名冲突
         new_path = os.path.join(file_dir, new_filename)
-        
-        # 如果文件已存在，添加序号
         counter = 1
         while os.path.exists(new_path):
-            if self.artist_name:
-                new_filename = f"{self.song_name}--{self.artist_name}_{counter}{file_ext}"
-            else:
-                new_filename = f"{self.song_name}_{counter}{file_ext}"
+            new_filename = f"{self.song_name}--{artist}_{counter}{file_ext}"
+            new_filename = re.sub(r'[\\/:*?"<>|]', '', new_filename)
             new_path = os.path.join(file_dir, new_filename)
             counter += 1
-            
+                
         # 重命名文件
         try:
             os.rename(file_path, new_path)
@@ -81,7 +73,30 @@ class DownloadWorker(QThread):
         except Exception as e:
             print(f"重命名文件时发生错误: {str(e)}")
             return file_path
+
+    def handle_file_renaming(self, file_path):
+        """处理文件重命名逻辑"""
+        self.download_progress.emit(f"正在处理文件名: {self.song_name}")
         
+        # 如果提供了歌手名，直接使用
+        if self.artist_name:
+            self.download_progress.emit(f"正在重命名: {self.song_name}--{self.artist_name}")
+            return self.rename_file(file_path)
+        
+        # 否则尝试使用AI分析
+        self.download_progress.emit(f"正在使用AI分析获取歌手信息: {self.song_name}")
+        song_info = auto_download_bilibili.call_ai_for_rename(file_path, "LLM")
+        
+        # 根据AI结果决定使用的歌手名
+        ai_artist = None
+        if song_info and "artist" in song_info:
+            ai_artist = song_info["artist"].replace(" ", "_")
+            self.download_progress.emit(f"正在重命名: {self.song_name}--{ai_artist}")
+        else:
+            self.download_progress.emit(f"无法获取歌手信息，仅使用歌名: {self.song_name}--Unknown")
+        
+        return self.rename_file(file_path, ai_artist)
+
     def run(self):
         if not TOOLS_IMPORTED:
             self.download_error.emit("搜索和下载功能不可用")
@@ -90,7 +105,7 @@ class DownloadWorker(QThread):
         try:
             # 更新状态
             self.download_progress.emit(f"正在搜索: {self.song_name}" + 
-                                       (f" - {self.artist_name}" if self.artist_name else " 原唱"))
+                                        (f" - {self.artist_name}" if self.artist_name else " 原唱"))
             
             # 搜索BV号
             query = f"{self.song_name} {self.artist_name}" if self.artist_name else f"{self.song_name} 原唱"
@@ -117,19 +132,9 @@ class DownloadWorker(QThread):
             if not file_path:
                 self.download_error.emit(f"下载失败: {self.song_name}")
                 return
-                
-            # 更新状态
-            self.download_progress.emit(f"正在处理文件名: {self.song_name}")
             
-            # 根据是否有歌手信息决定命名方式
-            if self.artist_name:
-                # 如果有歌曲和歌手信息，使用简单的歌曲--歌手格式命名
-                self.download_progress.emit(f"正在重命名: {self.song_name}--{self.artist_name}")
-                renamed_path = self.rename_file(file_path)
-            else:
-                # 如果没有歌手信息，尝试使用AI识别并重命名
-                self.download_progress.emit(f"正在使用AI重命名: {self.song_name}")
-                renamed_path = auto_download_bilibili.rename_file_with_ai(file_path, "LLM")
+            # 处理文件重命名
+            renamed_path = self.handle_file_renaming(file_path)
             
             # 发送完成信号
             self.download_complete.emit(renamed_path)
@@ -142,8 +147,14 @@ class MusicPlayer(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("牛马音乐播放器")
-        self.setMinimumSize(1000, 600)  # 增加窗口大小以适应更大字体
-        self.current_playlist_path = None  # 初始化变量
+        
+        # 获取当前屏幕尺寸
+        screen = QApplication.primaryScreen().availableGeometry()
+        screen_width = screen.width()
+        screen_height = screen.height()
+        
+        # 设置窗口尺寸为屏幕的一半
+        self.setMinimumSize(screen_width // 2, screen_height // 2)
         
         # 获取系统主题的默认文本颜色
         self.default_text_color = self.palette().color(QPalette.Text)
@@ -163,6 +174,16 @@ class MusicPlayer(QMainWindow):
         
         # 添加缓存音频时长的字典
         self.audio_durations = {}
+        
+        # 添加搜索延迟计时器
+        self.search_timer = QTimer(self)
+        self.search_timer.setSingleShot(True)
+        self.search_timer.setInterval(1000)  # 1秒延迟
+        self.search_timer.timeout.connect(self.execute_search)
+        
+        # 添加下载队列
+        self.download_queue = []
+        self.is_downloading = False
         
         # 设置UI
         self.setup_ui()
@@ -209,8 +230,8 @@ class MusicPlayer(QMainWindow):
         
         self.search_box = QLineEdit()
         self.search_box.setFont(app_font)
-        self.search_box.setPlaceholderText("输入歌名或歌名--歌手")
-        self.search_box.returnPressed.connect(self.search_song)
+        self.search_box.setPlaceholderText("输入:“歌名”或“歌名--歌手”")
+        self.search_box.returnPressed.connect(self.queue_search)
         top_layout.addWidget(self.search_box)
         
         # 添加顶部布局到主布局
@@ -305,13 +326,13 @@ class MusicPlayer(QMainWindow):
         
         # 状态标签
         self.playing_status = QLabel("未播放")
-        self.playing_status.setFont(QFont("Microsoft YaHei", 11))
+        self.playing_status.setFont(QFont("Microsoft YaHei", 13))
         
         self.mode_status = QLabel(self.play_modes[self.play_mode])
-        self.mode_status.setFont(QFont("Microsoft YaHei", 11))
+        self.mode_status.setFont(QFont("Microsoft YaHei", 13))
         
         self.download_status = QLabel("准备就绪")
-        self.download_status.setFont(QFont("Microsoft YaHei", 11))
+        self.download_status.setFont(QFont("Microsoft YaHei", 13))
         
         self.statusbar.addWidget(self.playing_status)
         self.statusbar.addWidget(self.mode_status)
@@ -433,7 +454,38 @@ class MusicPlayer(QMainWindow):
             
         except Exception as e:
             QMessageBox.warning(self, "错误", f"载入歌曲列表失败: {str(e)}")
-    
+
+    def extract_song_info(self, filename):
+        """从文件名中提取歌曲名和歌手信息"""
+        # 移除扩展名
+        file_base = os.path.splitext(filename)[0]
+        
+        # 检查是否有歌手信息
+        if "--" in file_base:
+            song_name, artist_name = file_base.split("--", 1)
+            return song_name.strip(), artist_name.strip()
+        else:
+            return file_base.strip(), None
+
+    def is_song_match(self, search_name, search_artist, target_name, target_artist):
+        """根据新规则检查两个歌曲是否匹配"""
+        # 歌曲名需要完全匹配（不区分大小写）
+        if search_name.lower() != target_name.lower():
+            return False
+        
+        # 如果搜索没有指定歌手，则认为匹配
+        if not search_artist:
+            return True
+        
+        # 如果目标没有歌手信息，但搜索指定了歌手，则不匹配
+        if not target_artist:
+            return False
+        
+        # 对于歌手，检查是否有一方是另一方的子串（不区分大小写）
+        search_artist_lower = search_artist.lower()
+        target_artist_lower = target_artist.lower()
+        return search_artist_lower in target_artist_lower or target_artist_lower in search_artist_lower
+
     def find_song_files(self):
         """查找播放列表中歌曲的本地文件，并从文件名中提取歌名和歌手信息"""
         script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -454,46 +506,32 @@ class MusicPlayer(QMainWindow):
         
         # 从文件名中提取歌名和歌手，并与播放列表中的歌曲匹配
         for i, song in enumerate(self.current_playlist):
-            song_name = song["name"].lower()
-            song_artist = song["artist"].lower() if song["artist"] else None
+            song_name = song["name"]
+            song_artist = song["artist"] if song["artist"] else None
             
             found = False
             for file_path in music_files:
                 filename = os.path.basename(file_path)
-                filename_lower = filename.lower()
+                file_song_name, file_artist_name = self.extract_song_info(filename)
                 
-                # 检查歌名和歌手是否都在文件名中
-                if song_name in filename_lower:
-                    if song_artist is None or song_artist in filename_lower:
-                        self.current_playlist[i]["path"] = file_path
-                        
-                        # 获取并缓存文件时长
-                        self.current_playlist[i]["duration"] = self.get_audio_duration(file_path)
-                        
-                        # 尝试从文件名中更新歌曲信息
-                        if "--" in filename:
-                            # 从文件名提取信息
-                            name_part, artist_part = filename.rsplit("--", 1)
-                            # 移除扩展名
-                            for ext in audio_extensions:
-                                if artist_part.lower().endswith(ext):
-                                    artist_part = artist_part[:-len(ext)]
-                                    break
-                            
-                            # 更新歌曲信息
-                            self.current_playlist[i]["name"] = name_part
-                            self.current_playlist[i]["artist"] = artist_part
-                            
-                            # 更新表格中的显示
-                            self.song_list.setItem(i, 0, QTableWidgetItem(name_part))
-                            self.song_list.setItem(i, 1, QTableWidgetItem(artist_part))
-                            
-                            # 设置文本颜色为默认文本颜色
-                            self.song_list.item(i, 0).setForeground(self.default_text_color)
-                            self.song_list.item(i, 1).setForeground(self.default_text_color)
-                        
-                        found = True
-                        break
+                # 使用新的匹配逻辑
+                if self.is_song_match(song_name, song_artist, file_song_name, file_artist_name):
+                    self.current_playlist[i]["path"] = file_path
+                    
+                    # 获取并缓存文件时长
+                    self.current_playlist[i]["duration"] = self.get_audio_duration(file_path)
+                    
+                    # 可能的话更新歌曲信息
+                    if file_artist_name and not song_artist:
+                        self.current_playlist[i]["artist"] = file_artist_name
+                        self.song_list.setItem(i, 1, QTableWidgetItem(file_artist_name))
+                    
+                    # 设置文本颜色为默认文本颜色
+                    self.song_list.item(i, 0).setForeground(self.default_text_color)
+                    self.song_list.item(i, 1).setForeground(self.default_text_color)
+                    
+                    found = True
+                    break
             
             # 如果未找到，更新UI项目以指示需要下载
             if not found:
@@ -506,11 +544,11 @@ class MusicPlayer(QMainWindow):
                         name_item.setForeground(QColor("#777777"))
     
     def search_song(self):
-        """基于文本输入搜索歌曲，并将新歌曲添加到当前播放列表文件"""
+        """基于文本输入搜索歌曲，使用新的匹配逻辑"""
         search_text = self.search_box.text().strip()
         if not search_text:
             return
-            
+                
         # 解析搜索文本
         if "--" in search_text:
             song_name, artist_name = search_text.split("--", 1)
@@ -520,23 +558,24 @@ class MusicPlayer(QMainWindow):
             song_name = search_text.strip()
             artist_name = ""  # 使用空字符串代替"未知"
         
-        # 首先尝试在当前播放列表中查找
+        # 检查播放列表中是否已有该歌曲
         found_in_playlist = False
         for i, song in enumerate(self.current_playlist):
-            if song["name"].lower() == song_name.lower():
-                if artist_name == "" or (song["artist"] and song["artist"].lower() == artist_name.lower()):
-                    # 完美匹配，如果可用则播放
-                    if song["path"]:
-                        self.play_song(i)
-                        found_in_playlist = True
-                        break
-                    else:
-                        # 需要先下载
-                        self.download_and_play(song["name"], artist_name, playlist_index=i)
-                        found_in_playlist = True
-                        break
+            # 使用新的匹配逻辑
+            if self.is_song_match(song_name, artist_name, song["name"], song["artist"]):
+                # 完美匹配，如果可用则播放
+                if song["path"]:
+                    self.play_song(i)
+                    found_in_playlist = True
+                    break
+                else:
+                    # 需要先下载
+                    self.add_to_download_queue(song["name"], artist_name, playlist_index=i)
+                    found_in_playlist = True
+                    break
         
         if found_in_playlist:
+            self.search_box.clear()
             return
             
         # 如果不在播放列表中，尝试在本地文件中查找
@@ -545,7 +584,8 @@ class MusicPlayer(QMainWindow):
         
         if not os.path.exists(music_dir):
             os.makedirs(music_dir)
-            self.download_and_play(song_name, artist_name)
+            self.add_to_download_queue(song_name, artist_name)
+            self.search_box.clear()
             return
         
         # 查找匹配文件
@@ -556,25 +596,18 @@ class MusicPlayer(QMainWindow):
         for file in os.listdir(music_dir):
             file_path = os.path.join(music_dir, file)
             if os.path.isfile(file_path) and any(file.lower().endswith(ext) for ext in audio_extensions):
-                filename = os.path.basename(file_path).lower()
+                filename = os.path.basename(file_path)
+                file_song_name, file_artist_name = self.extract_song_info(filename)
                 
-                if song_name.lower() in filename:
-                    if artist_name == "" or artist_name.lower() in filename:
-                        found_file = file_path
-                        
-                        # 尝试从文件名提取歌手信息
-                        if "--" in file:
-                            base_name = os.path.basename(file_path)
-                            name_part, artist_part = base_name.rsplit("--", 1)
-                            # 移除扩展名
-                            for ext in audio_extensions:
-                                if artist_part.lower().endswith(ext):
-                                    artist_part = artist_part[:-len(ext)]
-                                    break
-                            song_name = name_part
-                            found_artist = artist_part
-                        
-                        break
+                # 使用新的匹配逻辑
+                if self.is_song_match(song_name, artist_name, file_song_name, file_artist_name):
+                    found_file = file_path
+                    
+                    # 使用文件名中的歌手信息（如果有）
+                    if file_artist_name:
+                        found_artist = file_artist_name
+                    
+                    break
         
         if found_file:
             # 获取文件时长
@@ -622,28 +655,105 @@ class MusicPlayer(QMainWindow):
                 self.play_song(len(self.current_playlist) - 1)
         else:
             # 需要下载
-            self.download_and_play(song_name, artist_name)
+            self.add_to_download_queue(song_name, artist_name)
+            self.search_box.clear()
     
-    def download_and_play(self, song_name, artist_name=None, playlist_index=None):
+    def queue_search(self):
+        """将搜索请求加入延迟队列"""
+        if self.search_timer.isActive():
+            self.search_timer.stop()  # 重置计时器
+        self.search_timer.start()
+
+    def execute_search(self):
+        """实际执行搜索操作"""
+        # 调用search_song方法来先检查本地文件和播放列表
+        self.search_song()
+
+    def add_to_download_queue(self, song_name, artist_name="", playlist_index=None):
+        """将歌曲添加到下载队列"""
+        # 首先检查是否已在队列中
+        for item in self.download_queue:
+            if item['song_name'].lower() == song_name.lower() and item['artist_name'].lower() == artist_name.lower():
+                self.download_status.setText(f"已在队列中: {song_name}")
+                return
+        
+        # 添加到队列
+        self.download_queue.append({
+            'song_name': song_name,
+            'artist_name': artist_name,
+            'playlist_index': playlist_index
+        })
+        
+        # 更新状态
+        queue_length = len(self.download_queue)
+        self.download_status.setText(f"队列: {queue_length}首歌曲待下载")
+        
+        # 如果当前没有下载任务，启动下载
+        if not self.is_downloading:
+            self.process_download_queue()
+
+    def process_download_queue(self):
+        """处理下载队列中的下一个项目"""
+        if not self.download_queue:
+            self.is_downloading = False
+            self.download_status.setText("所有下载完成")
+            return
+        
+        # 获取队列中的下一个项目
+        item = self.download_queue[0]
+        self.is_downloading = True
+        
+        # 开始下载
+        self.download_and_play(
+            item['song_name'], 
+            item['artist_name'], 
+            item['playlist_index'],
+            process_queue=True
+        )
+
+    def download_and_play(self, song_name, artist_name=None, playlist_index=None, process_queue=False):
         """下载歌曲并在准备好时播放"""
         if not TOOLS_IMPORTED:
             QMessageBox.warning(self, "功能不可用", 
-                           "搜索和下载功能不可用。请确保 search_music.py 和 auto_download_bilibili.py 在同一目录中。")
+                        "搜索和下载功能不可用。请确保 search_music.py 和 auto_download_bilibili.py 在同一目录中。")
             self.download_status.setText("下载功能不可用")
+            
+            # 移除当前任务并处理下一个
+            if process_queue and self.download_queue:
+                self.download_queue.pop(0)
+                self.process_download_queue()
             return
             
         # 记录当前是否有歌曲在播放
         was_playing = (self.current_index != -1)
-            
-        self.download_status.setText(f"正在下载: {song_name}")
+        
+        # 更新状态显示
+        queue_text = f"[队列:{len(self.download_queue)}]" if self.download_queue else ""
+        self.download_status.setText(f"{queue_text} 正在下载: {song_name}")
         
         # 创建并启动下载工作线程
         self.download_worker = DownloadWorker(song_name, artist_name)
-        self.download_worker.download_complete.connect(
-            lambda path: self.handle_download_complete(path, song_name, artist_name, playlist_index, was_playing)
+        
+        # 修改信号连接以考虑队列处理
+        if process_queue:
+            self.download_worker.download_complete.connect(
+                lambda path: self.handle_download_complete_queue(path, song_name, artist_name, playlist_index, was_playing)
+            )
+        else:
+            self.download_worker.download_complete.connect(
+                lambda path: self.handle_download_complete(path, song_name, artist_name, playlist_index, was_playing)
+            )
+        
+        # 连接进度信号，显示更多细节
+        self.download_worker.download_progress.connect(
+            lambda msg: self.update_download_status(msg, len(self.download_queue))
         )
-        self.download_worker.download_progress.connect(self.download_status.setText)
-        self.download_worker.download_error.connect(self.handle_download_error)
+        
+        # 修改错误处理以支持队列
+        if process_queue:
+            self.download_worker.download_error.connect(self.handle_download_error_queue)
+        else:
+            self.download_worker.download_error.connect(self.handle_download_error)
         
         self.download_worker.start()
     
@@ -753,6 +863,41 @@ class MusicPlayer(QMainWindow):
         """处理下载错误"""
         self.download_status.setText("下载失败")
         QMessageBox.warning(self, "下载错误", error_message)
+
+    def update_download_status(self, message, queue_length=0):
+        """更新下载状态，包括队列信息"""
+        queue_text = f"[队列:{queue_length}]" if queue_length > 0 else ""
+        self.download_status.setText(f"{queue_text} {message}")
+
+    def handle_download_complete_queue(self, file_path, song_name, artist_name, playlist_index, was_playing):
+        """处理队列中的下载完成"""
+        # 处理当前下载项
+        self.handle_download_complete(file_path, song_name, artist_name, playlist_index, was_playing)
+        
+        # 从队列中移除当前项
+        if self.download_queue:
+            self.download_queue.pop(0)
+        
+        # 处理队列中的下一个项目
+        QTimer.singleShot(500, self.process_download_queue)
+
+    def handle_download_error_queue(self, error_message):
+        """处理队列中的下载错误"""
+        # 显示错误消息
+        self.download_status.setText(f"下载失败: {error_message}")
+        QMessageBox.warning(self, "下载错误", error_message)
+        
+        # 从队列中移除当前项
+        if self.download_queue:
+            failed_item = self.download_queue.pop(0)
+            print(f"从队列中移除失败的下载: {failed_item['song_name']}")
+        
+        # 如果队列为空，确保重置下载状态
+        if not self.download_queue:
+            self.is_downloading = False
+    
+        # 处理队列中的下一个项目
+        QTimer.singleShot(1000, self.process_download_queue)
     
     def play_selected_song(self, row, column):
         """双击列表行时播放歌曲"""
@@ -797,10 +942,20 @@ class MusicPlayer(QMainWindow):
         self.player.setMedia(QMediaContent(QUrl.fromLocalFile(song["path"])))
         self.player.play()
         
-        # 如果有缓存的时长，立即更新进度条和时间标签
+        # 如果有缓存的准确时长，立即设置进度条范围
         if song["duration"] > 0:
             self.position_slider.setRange(0, song["duration"])
             self.time_label.setText(f"00:00 / {self.format_time(song['duration'])}")
+            
+            # 确保后续QMediaPlayer的duration变化不会覆盖已有的准确时长
+            try:
+                # 尝试断开所有信号处理程序
+                self.player.durationChanged.disconnect()
+            except TypeError:
+                pass  # 如果没有连接，忽略错误
+            
+            # 连接自定义处理程序
+            self.player.durationChanged.connect(lambda d: self.custom_duration_handler(d, song["duration"]))
         
         # 更新UI
         self.play_button.setText("暂停")
@@ -886,63 +1041,108 @@ class MusicPlayer(QMainWindow):
             if self.play_mode == 0:  # 列表循环
                 self.play_next()
             elif self.play_mode == 1:  # 单曲循环
-                # 重新播放当前歌曲
-                self.player.setPosition(0)
-                self.player.play()
+                # 使用QTimer创建小延迟，避免可能的播放问题
+                QTimer.singleShot(10, lambda: self.player.setPosition(0))
+                QTimer.singleShot(20, lambda: self.player.play())
             elif self.play_mode == 2:  # 随机
                 self.play_random_song()
     
+    def custom_duration_handler(self, player_duration, cached_duration):
+        """当我们已有准确时长时的自定义处理器"""
+        # 只有当缓存的时长明显不同于player报告的时长时，才记录差异用于后续计算
+        if abs(player_duration - cached_duration) > 1000:  # 差异超过1秒
+            if self.current_index >= 0 and self.current_index < len(self.current_playlist):
+                song = self.current_playlist[self.current_index]
+                song["duration_ratio"] = player_duration / cached_duration if cached_duration > 0 else 1.0
+        
+        # 保持进度条使用缓存的准确时长
+        self.position_slider.setRange(0, cached_duration)
+    
     def position_changed(self, position):
-        """处理播放位置变化"""
-        # 更新进度条（仅显示，不可拖动）
-        if self.position_slider.maximum() > 0:
-            self.position_slider.setValue(position)
+        """处理播放位置变化，确保使用缓存的准确时长"""
+        if self.current_index < 0 or self.current_index >= len(self.current_playlist):
+            return
             
+        song = self.current_playlist[self.current_index]
+        
+        # 获取缓存的准确时长（通过mutagen获取）
+        cached_duration = song["duration"]
+        
+        # QMediaPlayer返回的时长，可能不准确
+        player_duration = self.player.duration()
+        
+        # 始终使用缓存的准确时长（如果有）
+        actual_duration = cached_duration if cached_duration > 0 else player_duration
+        
+        # 如果进度条最大值与实际时长不匹配，重新设置范围
+        if self.position_slider.maximum() != actual_duration and actual_duration > 0:
+            self.position_slider.setRange(0, actual_duration)
+        
+        # 更新进度条位置
+        if actual_duration > 0:
+            self.position_slider.setValue(position)
+        
         # 更新时间标签
         current_time = self.format_time(position)
-        
-        # 使用缓存的时长而不是player.duration()
-        if self.current_index >= 0 and self.current_index < len(self.current_playlist):
-            song = self.current_playlist[self.current_index]
-            if song["duration"] > 0:
-                total_time = self.format_time(song["duration"])
-            else:
-                # 如果没有缓存的时长，尝试获取并缓存
-                duration = self.player.duration()
-                if duration > 0:
-                    song["duration"] = duration
-                    self.audio_durations[song["path"]] = duration
-                total_time = self.format_time(duration)
-        else:
-            total_time = self.format_time(self.player.duration())
-            
+        total_time = self.format_time(actual_duration)
         self.time_label.setText(f"{current_time} / {total_time}")
     
     def duration_changed(self, duration):
-        """处理持续时间变化"""
-        # 更新进度条范围
-        self.position_slider.setRange(0, duration)
-        
-        # 更新当前歌曲的缓存时长
-        if self.current_index >= 0 and self.current_index < len(self.current_playlist):
-            song = self.current_playlist[self.current_index]
+        """处理持续时间变化，优先使用缓存的准确时长"""
+        # 检查是否有正在播放的歌曲
+        if self.current_index < 0 or self.current_index >= len(self.current_playlist):
+            return
             
-            # 如果时长有变化，更新缓存
-            if duration > 0 and song["duration"] != duration:
+        song = self.current_playlist[self.current_index]
+        cached_duration = song["duration"]
+        
+        # 如果缓存中有准确时长，优先使用缓存时长
+        if cached_duration > 0:
+            actual_duration = cached_duration
+        else:
+            # 否则使用QMediaPlayer提供的时长并更新缓存
+            actual_duration = duration
+            if duration > 0:
                 song["duration"] = duration
                 if song["path"]:
                     self.audio_durations[song["path"]] = duration
+        
+        # 更新进度条范围
+        if actual_duration > 0:
+            self.position_slider.setRange(0, actual_duration)
+            
+        # 更新时间标签
+        current_position = self.player.position()
+        current_time = self.format_time(current_position)
+        total_time = self.format_time(actual_duration)
+        self.time_label.setText(f"{current_time} / {total_time}")
     
     def set_position(self, position):
-        """设置播放位置"""
+        """设置播放位置，考虑实际音频时长与player报告时长可能不一致的情况"""
+        # 检查是否有正在播放的歌曲
+        if self.current_index < 0 or self.current_index >= len(self.current_playlist):
+            return
+            
+        song = self.current_playlist[self.current_index]
+        
+        # 获取缓存的准确时长与QMediaPlayer报告的时长
+        cached_duration = song["duration"]
+        player_duration = self.player.duration()
+        
+        # 如果存在不一致，调整position值
+        if cached_duration > 0 and player_duration > 0 and cached_duration != player_duration:
+            # 将position按比例转换为player期望的值
+            position = int(position * (player_duration / cached_duration))
+        
+        # 设置播放位置
         self.player.setPosition(position)
-    
+        
     def skip_seconds(self, seconds):
         """前进或后退指定的秒数"""
         if self.player.state() == QMediaPlayer.PlayingState or self.player.state() == QMediaPlayer.PausedState:
             current_position = self.player.position()
             new_position = max(0, current_position + seconds * 1000)  # 转换为毫秒
-            self.player.setPosition(new_position)
+            self.player.setPosition(new_position)   
             
     def keyPressEvent(self, event):
         """处理键盘按键事件"""
@@ -968,8 +1168,15 @@ class MusicPlayer(QMainWindow):
     def eventFilter(self, obj, event):
         """事件过滤器，用于拦截表格的方向键事件和Tab键事件"""
         if obj is self.song_list and event.type() == event.KeyPress:
-            if event.key() in [Qt.Key_Left, Qt.Key_Right, Qt.Key_Up, Qt.Key_Down]:
-                # 将方向键事件传递给主窗口
+            if event.key() in [Qt.Key_Left, Qt.Key_Right]:
+                # 直接在这里处理左右键，而不是传给keyPressEvent
+                if event.key() == Qt.Key_Left:
+                    self.skip_seconds(-5)
+                elif event.key() == Qt.Key_Right:
+                    self.skip_seconds(5)
+                return True
+            elif event.key() in [Qt.Key_Up, Qt.Key_Down]:
+                # 将上下键事件传递给主窗口
                 self.keyPressEvent(event)
                 return True
             elif event.key() == Qt.Key_Tab:
