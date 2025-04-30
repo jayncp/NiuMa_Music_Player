@@ -13,3 +13,6 @@ music_download/
 
 # 忽略python缓存文件
 __pycache__/
+
+# 忽略打包用文件
+packaging/
