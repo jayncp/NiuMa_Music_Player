@@ -918,8 +918,9 @@ class MusicPlayer(QMainWindow):
         song = self.current_playlist[index]
         
         if not song["path"]:
-            # 需要先下载
-            self.download_and_play(song["name"], song["artist"], index)
+            # 只将歌曲添加到下载队列，而不是调用download_and_play
+            self.add_to_download_queue(song["name"], song["artist"], index)
+            self.statusbar.showMessage(f"'{song['name']}'已加入下载队列，下载完成后可以播放", 3000)
             return
             
         # 更新当前索引
