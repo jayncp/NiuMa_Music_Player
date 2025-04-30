@@ -24,19 +24,20 @@
 - 将下载的二进制文件放入对应操作系统的子文件夹中，结构如下
 ```
 niuma-music-player/
-├── auto_download_bilibili.py
-├── bin/
-│   ├── windows/
-│   │   ├── ffmpeg.exe
-│   │   ├── ffprobe.exe
-│   │   └── ffplay.exe
-│   ├── macos/
-│   │   ├── ffmpeg
-│   │   ├── ffprobe
-│   │   └── ffplay
-│   └── linux/
-│       ├── ffmpeg
-│       ├── ffprobe
-│       └── ffplay
-└── other files...
+└── tool/
+    ├── auto_download_bilibili.py
+    ├── bin/
+    │   ├── windows/
+    │   │   ├── ffmpeg.exe
+    │   │   ├── ffprobe.exe
+    │   │   └── ffplay.exe
+    │   ├── macos/
+    │   │   ├── ffmpeg
+    │   │   ├── ffprobe
+    │   │   └── ffplay
+    │   └── linux/
+    │       ├── ffmpeg
+    │       ├── ffprobe
+    │       └── ffplay
+    └── other files...
 ```

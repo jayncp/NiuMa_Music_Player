@@ -1,2 +1,12 @@
+# 忽略mac系统储存信息
 .DS_Store
-tools/bin/
+# 忽略ffmpeg二进制文件
+tools/bin/windows/
+tools/bin/macos/
+!tools/bin/macos/mac系统ffmpeg放这里.txt
+!tools/bin/windows/windows系统ffmpeg放这里.txt
+
+# 忽略音乐列表文件
+MUSICLIST_*.txt
+# 忽略音乐下载文件夹
+music_download/

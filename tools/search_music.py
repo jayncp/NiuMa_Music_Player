@@ -55,11 +55,16 @@ def extract_videos(html_content):
     
     # 保存原始页面内容以便调试
     try:
-        with open("bilibili_search_result.html", "w", encoding="utf-8") as f:
+        # Get the script directory
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        # Create full path for the HTML file
+        html_file_path = os.path.join(script_dir, "bilibili_search_result.html")
+        
+        with open(html_file_path, "w", encoding="utf-8") as f:
             f.write(html_content)
-        print("原始HTML已保存到bilibili_search_result.html文件")
-    except:
-        print("无法保存HTML文件")
+        print(f"原始HTML已保存到{html_file_path}文件")
+    except Exception as e:
+        print(f"无法保存HTML文件: {e}")
     
     # 首先尝试从页面的JSON数据中提取视频信息
     # B站搜索页面通常在页面中嵌入了初始数据
@@ -362,6 +367,14 @@ def extract_videos(html_content):
                     if videos:
                         break
     
+    try:
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        html_file_path = os.path.join(script_dir, "bilibili_search_result.html")
+        if os.path.exists(html_file_path):
+            os.remove(html_file_path)
+            print("已删除临时HTML文件")
+    except Exception as e:
+        print(f"删除HTML文件时出错: {e}")
     return videos
 
 def send_to_llm(videos, song_name, artist_name):

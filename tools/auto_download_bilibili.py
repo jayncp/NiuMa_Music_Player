@@ -121,6 +121,8 @@ def download_bilibili_audio(bv_number, download_dir):
     base_cmd = [
         'yt-dlp', 
         '-x',  # 提取音频
+        "--playlist-start=1",
+        "--playlist-end=1",  # 只下载1p
         '--print', 'after_move:filepath',  # 打印处理后的文件路径
         '-o', f'{download_dir}/%(title)s-%(id)s.%(ext)s',  # 设置输出路径和文件名格式
     ]

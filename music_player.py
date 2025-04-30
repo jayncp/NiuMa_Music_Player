@@ -195,6 +195,12 @@ class MusicPlayer(QMainWindow):
         self.status_timer = QTimer(self)
         self.status_timer.timeout.connect(self.update_status)
         self.status_timer.start(1000)  # 每秒更新一次
+
+        # 添加一个锁定标志，防止循环更新
+        self.position_update_lock = False
+    
+        # 记录时长比例关系
+        self.duration_ratio = 1.0
         
     def setup_ui(self):
         """设置UI界面"""
@@ -918,6 +924,9 @@ class MusicPlayer(QMainWindow):
             
         # 更新当前索引
         self.current_index = index
+
+        # 重置时长比例关系
+        self.duration_ratio = 1.0
         
         # 更新表格选择和高亮
         self.song_list.selectRow(index)
@@ -1051,40 +1060,49 @@ class MusicPlayer(QMainWindow):
         """当我们已有准确时长时的自定义处理器"""
         # 只有当缓存的时长明显不同于player报告的时长时，才记录差异用于后续计算
         if abs(player_duration - cached_duration) > 1000:  # 差异超过1秒
-            if self.current_index >= 0 and self.current_index < len(self.current_playlist):
-                song = self.current_playlist[self.current_index]
-                song["duration_ratio"] = player_duration / cached_duration if cached_duration > 0 else 1.0
+            self.duration_ratio = player_duration / cached_duration if cached_duration > 0 else 1.0
+            print(f"时长比例更新: {self.duration_ratio:.2f} (播放器/缓存)")
         
         # 保持进度条使用缓存的准确时长
         self.position_slider.setRange(0, cached_duration)
     
     def position_changed(self, position):
-        """处理播放位置变化，确保使用缓存的准确时长"""
+        """处理播放位置变化，确保进度条显示正确"""
         if self.current_index < 0 or self.current_index >= len(self.current_playlist):
+            return
+        
+        # 如果锁定状态，跳过此次更新
+        if self.position_update_lock:
             return
             
         song = self.current_playlist[self.current_index]
-        
-        # 获取缓存的准确时长（通过mutagen获取）
         cached_duration = song["duration"]
-        
-        # QMediaPlayer返回的时长，可能不准确
         player_duration = self.player.duration()
         
-        # 始终使用缓存的准确时长（如果有）
-        actual_duration = cached_duration if cached_duration > 0 else player_duration
+        # 确保进度条范围正确设置为缓存时长
+        if cached_duration > 0 and self.position_slider.maximum() != cached_duration:
+            self.position_slider.setRange(0, cached_duration)
         
-        # 如果进度条最大值与实际时长不匹配，重新设置范围
-        if self.position_slider.maximum() != actual_duration and actual_duration > 0:
-            self.position_slider.setRange(0, actual_duration)
-        
-        # 更新进度条位置
-        if actual_duration > 0:
+        # 从播放器位置转换回进度条位置
+        slider_position = position
+        if player_duration > 0 and cached_duration > 0:
+            # 计算播放器当前位置的百分比
+            player_percentage = position / player_duration
+            
+            # 应用同样百分比到进度条时间线
+            slider_position = int(player_percentage * cached_duration)
+            
+            # 更新进度条，但不触发额外信号
+            self.position_slider.blockSignals(True)
+            self.position_slider.setValue(slider_position)
+            self.position_slider.blockSignals(False)
+        else:
+            # 无效时长情况的处理
             self.position_slider.setValue(position)
         
-        # 更新时间标签
-        current_time = self.format_time(position)
-        total_time = self.format_time(actual_duration)
+        # 更新时间标签 - 这里使用转换后的slider_position来显示当前时间
+        current_time = self.format_time(slider_position)  # 使用进度条时间线的位置
+        total_time = self.format_time(cached_duration if cached_duration > 0 else player_duration)
         self.time_label.setText(f"{current_time} / {total_time}")
     
     def duration_changed(self, duration):
@@ -1118,24 +1136,44 @@ class MusicPlayer(QMainWindow):
         self.time_label.setText(f"{current_time} / {total_time}")
     
     def set_position(self, position):
-        """设置播放位置，考虑实际音频时长与player报告时长可能不一致的情况"""
-        # 检查是否有正在播放的歌曲
+        """设置播放位置，修复时长不一致问题"""
         if self.current_index < 0 or self.current_index >= len(self.current_playlist):
             return
-            
-        song = self.current_playlist[self.current_index]
+                
+        # 激活锁定，防止反馈循环
+        self.position_update_lock = True
         
-        # 获取缓存的准确时长与QMediaPlayer报告的时长
+        song = self.current_playlist[self.current_index]
         cached_duration = song["duration"]
         player_duration = self.player.duration()
         
-        # 如果存在不一致，调整position值
-        if cached_duration > 0 and player_duration > 0 and cached_duration != player_duration:
-            # 将position按比例转换为player期望的值
-            position = int(position * (player_duration / cached_duration))
+        # 打印调试信息
+        print(f"点击进度条位置: {position}ms / {cached_duration}ms ({position/cached_duration:.2%})")
         
-        # 设置播放位置
-        self.player.setPosition(position)
+        # 计算时长比例关系（仅在需要时更新）
+        if cached_duration > 0 and player_duration > 0 and abs(player_duration - cached_duration) > 1000:
+            self.duration_ratio = player_duration / cached_duration
+            print(f"时长比例: {self.duration_ratio:.2f} (播放器/缓存)")
+        
+        # 根据时长比例计算实际播放位置
+        if cached_duration > 0:
+            # 计算点击位置在进度条上的百分比
+            percentage = position / cached_duration
+            # 转换为播放器时间线上的位置
+            player_position = int(percentage * player_duration)
+            
+            print(f"设置播放位置: {player_position}ms / {player_duration}ms ({percentage:.2%})")
+            self.player.setPosition(player_position)
+        else:
+            # 无缓存时长时的后备方案
+            self.player.setPosition(position)
+        
+        # 设置定时器在短暂延迟后释放锁
+        QTimer.singleShot(200, self.release_position_lock)
+
+    def release_position_lock(self):
+        """释放位置更新锁"""
+        self.position_update_lock = False
         
     def skip_seconds(self, seconds):
         """前进或后退指定的秒数"""
@@ -1148,10 +1186,10 @@ class MusicPlayer(QMainWindow):
         """处理键盘按键事件"""
         if event.key() == Qt.Key_Left:
             # 左箭头: 后退5秒
-            self.skip_seconds(-5)
+            self.skip_seconds(-int(5*self.duration_ratio))
         elif event.key() == Qt.Key_Right:
             # 右箭头: 前进5秒
-            self.skip_seconds(5)
+            self.skip_seconds(int(5*self.duration_ratio))
         elif event.key() == Qt.Key_Up:
             # 上箭头: 上一曲
             self.play_previous()
