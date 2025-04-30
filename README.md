@@ -31,7 +31,8 @@ niuma-music-player/
 ├── music_download/               # 下载的音乐存放目录
 ├── MUSICLIST_列表1.txt            # 播放列表文件示例
 ├── MUSICLIST_列表2.txt 
-└── requirements.txt              # 依赖库文件
+├── requirements.txt              # 依赖库文件
+└── AI_config.json                # AI大模型配置文件
 ```
 
 ### 2. 安装Python和依赖库
@@ -43,14 +44,19 @@ niuma-music-player/
 # 安装依赖库
 pip install -r requirements.txt
 ```
-### 3. 安装ffmpeg音乐处理工具
+
+### 3. 配置AI大模型
+
+- 在项目根目录的`AI_config.json`文件中配置api_url、api_key、model_name信息
+   
+### 4. 安装ffmpeg音乐处理工具
 
 - 如果你的系统中已经安装过ffmpeg，那么可以跳过此步骤
 - 否则，你需要选择以下两种方式之一：
   1. 在系统中安装：Windows在`https://ffmpeg.org/`下载并安装，macos使用`brew install ffmpeg`安装，linux使用`sudo apt-get install ffmpeg`安装
   2. 将编译好的二进制版本放到`tools/bin`目录下，详情参见`tools/ffmpeg下载教程.md`
 
-### 4. 配置歌曲列表
+### 5. 配置歌曲列表
 
 播放列表文件必须遵循以下命名格式：`MUSICLIST_列表名称.txt`
 
@@ -65,7 +71,7 @@ pip install -r requirements.txt
    牵丝戏--银临_Aki阿杰
   ```
 
-### 5. 运行程序
+### 6. 运行程序
 
 ```bash
 python music_player.py
@@ -94,8 +100,8 @@ python music_player.py
 
 ### 1. 关于AI大模型配置
 
-- (1)需要在`tools`目录下创建`search_music.py`和`auto_download_bilibili.py`正确配置AI大模型的api参数(包括api_url、api_key、model_name等)
-- (2)代码里内置的是我买的10块钱的api测试用，别想着薅羊毛了，如果能用你就用一下，时间长了说不定哪天就不好使了
+- (1)需要配置AI大模型API密钥,在项目根目录的`AI_config.json`文件中配置api_url、api_key、model_name信息
+- (2)目前内置的是我买的10块钱的api测试用，别想着薅羊毛了，如果能用你可以用一下，时间长了说不定哪天就不好使了
 
 ### 2. 关于tools目录下的两个模块
 - (1) `search_music.py`和`auto_download_bilibili.py`也可单独使用，详见`tools`对应文件的`README`文档

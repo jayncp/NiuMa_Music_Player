@@ -11,11 +11,7 @@
 
 ## 配置参数
 
-工具使用了以下关键配置参数：
-
-- `LLM_API_URL`：大模型API地址
-- `LLM_API_KEY`：API密钥
-- `LLM_MODEL_NAME`：使用的模型名称（默认为deepseek-chat）
+需要配置AI模型API密钥,在项目根目录的`AI_config.json`文件中配置api_url、api_key、model_name信息
 
 ## 使用方法
 
@@ -58,7 +54,7 @@ python search_music.py NAMELIST
 - 提取关键信息：视频标题、时长、BV号
 
 ### 3. 智能分析
-- 调用大模型API（默认使用deepseek-chat）分析搜索结果
+- 调用大模型API分析搜索结果
 - 根据提供的视频信息，智能判断哪个视频最可能是完整歌曲版本
 - 考虑因素：标题相关性、是否为完整版/片段、音质提示词等
 - 返回单一BV号作为最佳选择结果

@@ -18,7 +18,7 @@
 
 ## 配置参数
 
-如果要使用可选参数`-AINAME`（AI重命名），则需要配置AI模型API密钥,在代码最前面的`AI_MODELS`部分配置模型名称、url、key、model_name信息，并在`-AINAME`后指定模型名称。
+如果要使用可选参数`-AINAME`（AI重命名），则需要配置AI模型API密钥,在项目根目录的`AI_config.json`文件中配置api_url、api_key、model_name信息
 
 
 ## 使用方法
@@ -26,7 +26,7 @@
 ### 单个视频下载（使用AI重命名）：
 
 ```bash
-python auto_download_bilibili.py BV1es41127Fd -AINAME LLM
+python auto_download_bilibili.py BV1es41127Fd -AINAME
 ```
 
 ### 单个视频下载（不使用AI重命名）：
@@ -41,7 +41,7 @@ python auto_download_bilibili.py BV1es41127Fd
 2. 执行命令：
 
 ```bash
-python auto_download_bilibili.py BVLIST -AINAME LLM
+python auto_download_bilibili.py BVLIST -AINAME
 ```
 
 3. 下载的音频文件将保存在`../music_download`目录中
@@ -61,7 +61,7 @@ python auto_download_bilibili.py BVLIST -AINAME LLM
 - 适当设置任务间隔，避免触发网站限制
 
 ### 3. 智能重命名
-- 调用AI大模型API（默认使用Deepseek）分析原始文件名
+- 调用AI大模型API分析原始文件名
 - 从文件名中智能提取歌曲名称和歌手信息
 - 去除修饰词和描述性词语，保留核心信息
 - 按照"歌曲名--歌手名"格式标准化文件命名
