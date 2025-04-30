@@ -85,7 +85,7 @@ class DownloadWorker(QThread):
         
         # 否则尝试使用AI分析
         self.download_progress.emit(f"正在使用AI分析获取歌手信息: {self.song_name}")
-        song_info = auto_download_bilibili.call_ai_for_rename(file_path, "LLM")
+        song_info = auto_download_bilibili.call_ai_for_rename(file_path)
         
         # 根据AI结果决定使用的歌手名
         ai_artist = None

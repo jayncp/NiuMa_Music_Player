@@ -1,0 +1,5 @@
+{
+    "api_url": "https://tbnx.plus7.plus/v1/chat/completions",
+    "api_key": "sk-kMrK6zQMDPfwLP3xgrPrkIzLK7evhJgaWxm7t4SlpsaQ12SN",
+    "model_name": "deepseek-chat"
+}

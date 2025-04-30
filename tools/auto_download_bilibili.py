@@ -6,26 +6,46 @@ import json
 import requests
 import time
 
-# AI模型配置
-AI_MODELS = {
-    "LLM": {
-        "api_url": "https://tbnx.plus7.plus/v1/chat/completions",
-        "api_key": "sk-kMrK6zQMDPfwLP3xgrPrkIzLK7evhJgaWxm7t4SlpsaQ12SN",  # 替换为您的API密钥
-        "model_name": "deepseek-chat",
-        "headers": lambda key: {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {key}"
-        },
-        "payload": lambda prompt: {
-            "model": "deepseek-chat",
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0.7,
-            "max_tokens": 150
-        },
-        "extract_result": lambda response: response.json()["choices"][0]["message"]["content"]
-    }
-    # 可以添加更多AI模型配置
-}
+# 初始化默认值
+LLM_API_URL = "https://tbnx.plus7.plus/v1/chat/completions"
+LLM_API_KEY = "sk-kMrK6zQMDPfwLP3xgrPrkIzLK7evhJgaWxm7t4SlpsaQ12SN"
+LLM_MODEL_NAME = "deepseek-chat"
+_config_loaded = False
+
+def load_llm_config():
+    """从上一级目录的AI_config文件中读取大模型配置"""
+    global LLM_API_URL, LLM_API_KEY, LLM_MODEL_NAME, _config_loaded
+    
+    # 如果已经加载过配置，则不再重复加载
+    if _config_loaded:
+        return
+    
+    import os
+    import json
+    
+    # 获取脚本所在目录
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    # 获取上一级目录
+    parent_dir = os.path.dirname(script_dir)
+    # 配置文件路径
+    config_path = os.path.join(parent_dir, "AI_config.json")
+    
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            config = json.load(f)
+        
+        # 更新全局变量
+        if "api_url" in config:
+            LLM_API_URL = config["api_url"]
+        if "api_key" in config:
+            LLM_API_KEY = config["api_key"] 
+        if "model_name" in config:
+            LLM_MODEL_NAME = config["model_name"]
+            
+        _config_loaded = True
+        print(f"成功从配置文件加载AI设置")
+    except Exception as e:
+        print(f"使用默认AI配置: {e}")
 
 def check_yt_dlp_installed():
     """检查是否安装了yt-dlp，如果没有则尝试安装"""
@@ -203,18 +223,10 @@ def read_bv_list(list_file):
         print(f"读取BV列表文件时出错: {e}")
         return []
 
-def call_ai_for_rename(file_path, ai_name):
+def call_ai_for_rename(file_path):
     """调用AI模型来获取歌曲名称和歌手信息"""
-    if ai_name not in AI_MODELS:
-        print(f"错误: 未配置的AI模型 '{ai_name}'")
-        return None
-    
-    ai_config = AI_MODELS[ai_name]
-    api_key = ai_config["api_key"]
-    
-    if api_key == "YOUR_OPENAI_API_KEY" or api_key == "YOUR_ANTHROPIC_API_KEY":
-        print(f"错误: 请在脚本中设置您的{ai_name} API密钥")
-        return None
+    # 尝试加载配置（如果尚未加载）
+    load_llm_config()
     
     # 从文件名中提取现有信息
     file_name = os.path.basename(file_path)
@@ -227,17 +239,26 @@ def call_ai_for_rename(file_path, ai_name):
     """
     
     try:
-        headers = ai_config["headers"](api_key)
-        payload = ai_config["payload"](prompt)
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {LLM_API_KEY}"
+        }
+        
+        payload = {
+            "model": LLM_MODEL_NAME,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.7,
+            "max_tokens": 150
+        }
         
         response = requests.post(
-            ai_config["api_url"],
+            LLM_API_URL,
             headers=headers,
             data=json.dumps(payload)
         )
         
         if response.status_code == 200:
-            result_text = ai_config["extract_result"](response)
+            result_text = response.json()["choices"][0]["message"]["content"]
             
             # 尝试从结果中提取JSON
             try:
@@ -263,15 +284,15 @@ def call_ai_for_rename(file_path, ai_name):
         print(f"调用AI服务时发生错误: {e}")
         return None
 
-def rename_file_with_ai(file_path, ai_name):
+def rename_file_with_ai(file_path):
     """使用AI获取信息后重命名文件"""
     if not os.path.exists(file_path):
         print(f"错误: 文件不存在 {file_path}")
         return file_path
     
     # 调用AI获取歌曲信息
-    print(f"正在使用{ai_name}分析文件...")
-    song_info = call_ai_for_rename(file_path, ai_name)
+    print(f"正在使用AI分析文件...")
+    song_info = call_ai_for_rename(file_path)
     
     if not song_info:
         print("无法获取歌曲信息，保留原文件名")
@@ -296,7 +317,7 @@ def rename_file_with_ai(file_path, ai_name):
         print(f"重命名文件时发生错误: {e}")
         return file_path
 
-def batch_download(bv_list, download_dir, ai_name=None):
+def batch_download(bv_list, download_dir, use_ai=False):
     """批量下载多个BV号对应的音频"""
     total = len(bv_list)
     print(f"共有 {total} 个视频等待下载")
@@ -305,9 +326,9 @@ def batch_download(bv_list, download_dir, ai_name=None):
         print(f"[{i}/{total}] 开始下载 {bv}")
         file_path = download_bilibili_audio(bv, download_dir)
         
-        # 如果成功下载并指定了AI模型，则进行重命名
-        if file_path and ai_name:
-            rename_file_with_ai(file_path, ai_name)
+        # 如果成功下载并指定了使用AI，则进行重命名
+        if file_path and use_ai:
+            rename_file_with_ai(file_path)
             # 下载之间添加延迟，避免API限制
             if i < total:
                 time.sleep(2)  
@@ -315,8 +336,8 @@ def batch_download(bv_list, download_dir, ai_name=None):
 def main():
     parser = argparse.ArgumentParser(description='从Bilibili视频下载音频')
     parser.add_argument('bv', help='视频的BV号 (例如: BV1es41127Fd) 或 BVLIST (从BVLIST.txt读取)')
-    parser.add_argument('-AINAME', help='用于重命名文件的AI模型名称', choices=AI_MODELS.keys())
-    parser.epilog = "使用示例: python auto_download_bilibili.py BV1es41127Fd -AINAME LLM"
+    parser.add_argument('--AINAME', action='store_true', help='使用AI进行文件重命名')
+    parser.epilog = "使用示例: python auto_download_bilibili.py BV1es41127Fd --AINAME"
 
     # 捕获参数解析错误，显示帮助信息而不是错误
     try:
@@ -344,9 +365,9 @@ def main():
     else:
         # 下载单个BV号
         file_path = download_bilibili_audio(args.bv, download_dir)
-        # 如果成功下载并指定了AI模型，则进行重命名
+        # 如果成功下载并指定了使用AI，则进行重命名
         if file_path and args.AINAME:
-            rename_file_with_ai(file_path, args.AINAME)
+            rename_file_with_ai(file_path)
 
 if __name__ == "__main__":
     main()

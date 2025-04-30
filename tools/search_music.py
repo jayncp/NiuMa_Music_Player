@@ -7,10 +7,46 @@ import re
 import os  # 添加os模块以获取脚本目录
 from bs4 import BeautifulSoup
 
-# 大模型API配置常量
-LLM_API_URL = "https://tbnx.plus7.plus/v1/chat/completions"  # 替换为实际的大模型API地址
-LLM_API_KEY = "sk-kMrK6zQMDPfwLP3xgrPrkIzLK7evhJgaWxm7t4SlpsaQ12SN"  # 替换为你的API密钥
-LLM_MODEL_NAME = "deepseek-chat"  # 替换为你想使用的模型名称
+# 初始化默认值
+LLM_API_URL = "https://tbnx.plus7.plus/v1/chat/completions"
+LLM_API_KEY = "sk-kMrK6zQMDPfwLP3xgrPrkIzLK7evhJgaWxm7t4SlpsaQ12SN"
+LLM_MODEL_NAME = "deepseek-chat"
+_config_loaded = False
+
+def load_llm_config():
+    """从上一级目录的AI_config文件中读取大模型配置"""
+    global LLM_API_URL, LLM_API_KEY, LLM_MODEL_NAME, _config_loaded
+    
+    # 如果已经加载过配置，则不再重复加载
+    if _config_loaded:
+        return
+    
+    import os
+    import json
+    
+    # 获取脚本所在目录
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    # 获取上一级目录
+    parent_dir = os.path.dirname(script_dir)
+    # 配置文件路径
+    config_path = os.path.join(parent_dir, "AI_config.json")
+    
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            config = json.load(f)
+        
+        # 更新全局变量
+        if "api_url" in config:
+            LLM_API_URL = config["api_url"]
+        if "api_key" in config:
+            LLM_API_KEY = config["api_key"] 
+        if "model_name" in config:
+            LLM_MODEL_NAME = config["model_name"]
+            
+        _config_loaded = True
+        print(f"成功从配置文件加载AI设置")
+    except Exception as e:
+        print(f"使用默认AI配置: {e}")
 
 def search_bilibili(query):
     """
@@ -381,6 +417,9 @@ def send_to_llm(videos, song_name, artist_name):
     """
     将视频信息发送给大模型，让其选择最合适的视频。
     """
+    # 尝试加载配置（如果尚未加载）
+    load_llm_config()
+    
     if not videos:
         print("没有视频信息可发送给大模型")
         return None

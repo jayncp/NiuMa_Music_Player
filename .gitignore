@@ -10,3 +10,6 @@ tools/bin/macos/
 MUSICLIST_*.txt
 # 忽略音乐下载文件夹
 music_download/
+
+# 忽略python缓存文件
+__pycache__/
