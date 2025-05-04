@@ -1201,7 +1201,6 @@ class MusicPlayer(QMainWindow):
         if event.key() == Qt.Key_Left:
             # 左箭头: 后退5秒
             self.skip_seconds(-int(5*self.duration_ratio))
-            print(self.duration_ratio)
         elif event.key() == Qt.Key_Right:
             # 右箭头: 前进5秒
             self.skip_seconds(int(5*self.duration_ratio))
