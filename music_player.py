@@ -201,6 +201,9 @@ class MusicPlayer(QMainWindow):
     
         # 记录时长比例关系
         self.duration_ratio = 1.0
+
+        # 记录新起点
+        self.start_point = 0
         
     def setup_ui(self):
         """设置UI界面"""
@@ -928,6 +931,9 @@ class MusicPlayer(QMainWindow):
 
         # 重置时长比例关系
         self.duration_ratio = 1.0
+
+        # 重置新起点
+        self.start_point = 0
         
         # 更新表格选择和高亮
         self.song_list.selectRow(index)
@@ -1087,11 +1093,17 @@ class MusicPlayer(QMainWindow):
         # 从播放器位置转换回进度条位置
         slider_position = position
         if player_duration > 0 and cached_duration > 0:
-            # 计算播放器当前位置的百分比
-            player_percentage = position / player_duration
+            # # 计算播放器当前位置的百分比
+            # player_percentage = position / player_duration
             
-            # 应用同样百分比到进度条时间线
-            slider_position = int(player_percentage * cached_duration)
+            # # 应用同样百分比到进度条时间线
+            # slider_position = int(player_percentage * cached_duration)
+
+            # !!! 我自己写的根据新起点计算进度条位置，有误差但大体一致，解决了windows进度条问题
+            # 本质原因是跳转进度条时，需要考虑比例
+            # 但是自然播放时，两个都是以1s的正常速度播放
+            # 所以跳转后需要重新记录起点
+            slider_position = int(position - self.start_point + self.start_point * cached_duration / player_duration)
             
             # 更新进度条，但不触发额外信号
             self.position_slider.blockSignals(True)
@@ -1165,6 +1177,7 @@ class MusicPlayer(QMainWindow):
             
             print(f"设置播放位置: {player_position}ms / {player_duration}ms ({percentage:.2%})")
             self.player.setPosition(player_position)
+            self.start_point = player_position
         else:
             # 无缓存时长时的后备方案
             self.player.setPosition(position)
@@ -1188,6 +1201,7 @@ class MusicPlayer(QMainWindow):
         if event.key() == Qt.Key_Left:
             # 左箭头: 后退5秒
             self.skip_seconds(-int(5*self.duration_ratio))
+            print(self.duration_ratio)
         elif event.key() == Qt.Key_Right:
             # 右箭头: 前进5秒
             self.skip_seconds(int(5*self.duration_ratio))
